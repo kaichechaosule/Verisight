@@ -74,6 +74,9 @@ class ProviderDiagnostic(BaseModel):
     error: str | None = None
     attempts: int = 1
     circuit_state: str | None = None
+    native_params: list[str] = Field(default_factory=list)
+    post_processed_params: list[str] = Field(default_factory=list)
+    ignored_params: list[str] = Field(default_factory=list)
 
 
 class Citation(BaseModel):
@@ -220,8 +223,75 @@ class SearchConstraints(BaseModel):
     excluded_domains: list[str] = Field(default_factory=list)
     from_date: str | None = None  # ISO 8601 date string (YYYY-MM-DD)
     to_date: str | None = None  # ISO 8601 date string (YYYY-MM-DD)
+    time_range: Literal["day", "week", "month", "year"] | None = None
     strict_mode: bool = False  # Enable stricter verification parameters
     source_profile: Literal["balanced", "official", "community"] = "balanced"
+    country: str | None = None
+    language: str | None = None
+    safe_search: Literal["off", "moderate", "strict"] | None = None
+    include_raw_content: bool | Literal["markdown", "text"] = False
+    include_answer: bool | Literal["basic", "advanced"] = False
+
+
+class ProviderCapabilities(BaseModel):
+    """Provider-native support for common search request fields."""
+    native_domains: bool = False
+    native_date_range: bool = False
+    native_time_range: bool = False
+    native_country: bool = False
+    native_language: bool = False
+    native_safe_search: bool = False
+    native_raw_content: bool = False
+    native_answer: bool = False
+    native_news: bool = False
+
+
+class SearchRequest(BaseModel):
+    """Provider-facing search request with common P0 search parameters."""
+    query: str
+    mode: SearchMode = SearchMode.search
+    max_results: int = 10
+    constraints: SearchConstraints | None = None
+
+    @property
+    def allowed_domains(self) -> list[str]:
+        return self.constraints.allowed_domains if self.constraints else []
+
+    @property
+    def excluded_domains(self) -> list[str]:
+        return self.constraints.excluded_domains if self.constraints else []
+
+    @property
+    def from_date(self) -> str | None:
+        return self.constraints.from_date if self.constraints else None
+
+    @property
+    def to_date(self) -> str | None:
+        return self.constraints.to_date if self.constraints else None
+
+    @property
+    def time_range(self) -> Literal["day", "week", "month", "year"] | None:
+        return self.constraints.time_range if self.constraints else None
+
+    @property
+    def country(self) -> str | None:
+        return self.constraints.country if self.constraints else None
+
+    @property
+    def language(self) -> str | None:
+        return self.constraints.language if self.constraints else None
+
+    @property
+    def safe_search(self) -> Literal["off", "moderate", "strict"] | None:
+        return self.constraints.safe_search if self.constraints else None
+
+    @property
+    def include_raw_content(self) -> bool | Literal["markdown", "text"]:
+        return self.constraints.include_raw_content if self.constraints else False
+
+    @property
+    def include_answer(self) -> bool | Literal["basic", "advanced"]:
+        return self.constraints.include_answer if self.constraints else False
 
 
 ProviderName = Literal["brave", "duckduckgo", "exa", "tavily", "jina"]
