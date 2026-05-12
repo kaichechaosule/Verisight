@@ -6,6 +6,7 @@ import time
 import httpx
 
 from verisight.deep import build_evidence_graph, generate_follow_up_queries
+from verisight.provider_options import split_consumed_provider_options
 from verisight.providers.base import ProviderError, SearchProvider, unsupported_params
 from verisight.rank import build_citations, dedupe_and_rank
 from verisight.resilience import ProviderHealthRegistry
@@ -15,6 +16,7 @@ from verisight.schema import (
     DeepSearchResponse,
     ExtractedEvidence,
     ProviderDiagnostic,
+    ProviderOptionsMap,
     QueryResultSet,
     SearchConstraints,
     SearchItem,
@@ -47,6 +49,13 @@ class SearchBroker:
     def available_provider_names(self) -> list[str]:
         return [name for name, provider in self.providers.items() if provider.available() and provider.supports_search()]
 
+    def search_provider_capabilities(self) -> dict[str, ProviderCapabilities]:
+        return {
+            name: provider.capabilities()
+            for name, provider in self.providers.items()
+            if provider.available() and provider.supports_search()
+        }
+
     async def search(
         self,
         query: str,
@@ -54,8 +63,16 @@ class SearchBroker:
         provider_names: list[str] | None,
         max_results: int,
         constraints: SearchConstraints | None = None,
+        provider_options: ProviderOptionsMap | None = None,
     ) -> SearchResponse:
-        route = route_query(query, set(self.available_provider_names()), mode)
+        route = route_query(
+            query,
+            set(self.available_provider_names()),
+            mode,
+            constraints,
+            provider_options,
+            self.search_provider_capabilities(),
+        )
         selected = provider_names or route.selected_providers
         selected = [
             name
@@ -63,7 +80,13 @@ class SearchBroker:
             if name in self.providers and self.providers[name].available() and self.providers[name].supports_search()
         ]
         selected_mode = route.selected_mode
-        request = SearchRequest(query=query, mode=selected_mode, max_results=max_results, constraints=constraints)
+        request = SearchRequest(
+            query=query,
+            mode=selected_mode,
+            max_results=max_results,
+            constraints=constraints,
+            provider_options=provider_options,
+        )
         tasks = [self._search_provider(name, request) for name in selected]
         outcomes = await asyncio.gather(*tasks) if tasks else []
         results_by_provider = {name: items for name, items, _diagnostic in outcomes if items}
@@ -89,8 +112,16 @@ class SearchBroker:
         extract_top: int,
         extract_max_chars: int,
         constraints: SearchConstraints | None = None,
+        provider_options: ProviderOptionsMap | None = None,
     ) -> DeepSearchResponse:
-        route = route_query(query, set(self.available_provider_names()), SearchMode.deep)
+        route = route_query(
+            query,
+            set(self.available_provider_names()),
+            SearchMode.deep,
+            constraints,
+            provider_options,
+            self.search_provider_capabilities(),
+        )
         selected = provider_names or route.selected_providers
         selected = [
             name
@@ -109,7 +140,7 @@ class SearchBroker:
                 break
             explored_queries.update(item.lower() for item in current_queries)
             search_responses = await asyncio.gather(
-                *(self.search(item, SearchMode.deep, selected, max_results, constraints) for item in current_queries)
+                *(self.search(item, SearchMode.deep, selected, max_results, constraints, provider_options) for item in current_queries)
             )
             iteration_results_by_provider: dict[str, list[SearchItem]] = {}
             for response in search_responses:
@@ -157,8 +188,16 @@ class SearchBroker:
         extract_top: int,
         extract_max_chars: int,
         constraints: SearchConstraints | None = None,
+        provider_options: ProviderOptionsMap | None = None,
     ) -> VerifyResponse:
-        route = route_query(claim, set(self.available_provider_names()), SearchMode.verify)
+        route = route_query(
+            claim,
+            set(self.available_provider_names()),
+            SearchMode.verify,
+            constraints,
+            provider_options,
+            self.search_provider_capabilities(),
+        )
         selected = provider_names or route.selected_providers
         selected = [
             name
@@ -171,7 +210,7 @@ class SearchBroker:
         for worker in self.verify_workers:
             plan = worker.plan(claim)
             responses = await asyncio.gather(
-                *(self.search(query, SearchMode.verify, selected, max_results, constraints) for query in plan.queries)
+                *(self.search(query, SearchMode.verify, selected, max_results, constraints, provider_options) for query in plan.queries)
             )
             worker_results_by_url: dict[str, SearchItem] = {}
             for response in responses:
@@ -225,6 +264,10 @@ class SearchBroker:
         start = time.monotonic()
         provider = self.providers[name]
         native_params, fallback_params = unsupported_params(request, provider.capabilities())
+        provider_options_applied, provider_options_ignored = split_consumed_provider_options(
+            name,
+            request.provider_options_for(name),
+        )
         health = self.health_registry.get(name)
         if not health.can_execute():
             elapsed_ms = int((time.monotonic() - start) * 1000)
@@ -237,6 +280,8 @@ class SearchBroker:
                 circuit_state=health.state,
                 native_params=native_params,
                 post_processed_params=fallback_params,
+                provider_options_applied=provider_options_applied,
+                provider_options_ignored=provider_options_ignored,
             )
             return name, [], diagnostic
 
@@ -258,6 +303,8 @@ class SearchBroker:
                     circuit_state=health.state,
                     native_params=native_params,
                     post_processed_params=fallback_params,
+                    provider_options_applied=provider_options_applied,
+                    provider_options_ignored=provider_options_ignored,
                 )
             except (ProviderError, TimeoutError, httpx.HTTPError) as exc:
                 last_error = exc
@@ -276,6 +323,8 @@ class SearchBroker:
             circuit_state=health.state,
             native_params=native_params,
             post_processed_params=fallback_params,
+            provider_options_applied=provider_options_applied,
+            provider_options_ignored=provider_options_ignored,
         )
         return name, [], diagnostic
 

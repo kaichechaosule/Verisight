@@ -9,6 +9,7 @@ from verisight.broker import SearchBroker
 from verisight.constraints import build_constraints
 from verisight.config import load_settings
 from verisight.output import to_json_text
+from verisight.provider_options import merge_provider_options, parse_provider_options_file, parse_provider_options_text, provider_option_schema
 from verisight.registry import build_providers
 from verisight.router import route_query
 from verisight.schema import SearchMode
@@ -49,6 +50,7 @@ def providers() -> None:
             "supports_search": provider.supports_search(),
             "supports_extract": provider.supports_extract(),
             "capabilities": provider.capabilities().model_dump(),
+            "provider_options_schema": provider_option_schema(name),
         }
         for name, provider in search_broker.providers.items()
     ]
@@ -81,6 +83,8 @@ def search(
     safe_search: Annotated[str | None, typer.Option("--safe-search", help="Safe search: off, moderate, or strict")] = None,
     include_raw_content: Annotated[str | None, typer.Option("--include-raw-content", help="Request raw content when supported: true, markdown, or text")] = None,
     include_answer: Annotated[str | None, typer.Option("--include-answer", help="Request provider answer/summary when supported: true, basic, or advanced")] = None,
+    provider_options: Annotated[str | None, typer.Option("--provider-options", help="Provider-specific options as JSON object")] = None,
+    provider_options_file: Annotated[str | None, typer.Option("--provider-options-file", help="Path to provider-specific options JSON file")] = None,
     source_profile: Annotated[str, typer.Option("--source-profile", help="Source profile: balanced, official, or community")] = "balanced",
     strict: Annotated[bool, typer.Option("--strict", help="Enable strict verification mode")] = False,
     compact: Annotated[bool, typer.Option("--compact", help="Output compact JSON with key fields only")] = False,
@@ -99,7 +103,16 @@ def search(
         parse_optional_bool_or_level(include_raw_content),
         parse_optional_bool_or_level(include_answer),
     )
-    response = asyncio.run(broker().search(query, mode, parse_provider_names(providers), max_results, constraints))
+    response = asyncio.run(
+        broker().search(
+            query,
+            mode,
+            parse_provider_names(providers),
+            max_results,
+            constraints,
+            parse_provider_options(provider_options, provider_options_file),
+        )
+    )
     print_json(response, compact=compact)
 
 
@@ -122,6 +135,8 @@ def deep(
     safe_search: Annotated[str | None, typer.Option("--safe-search", help="Safe search: off, moderate, or strict")] = None,
     include_raw_content: Annotated[str | None, typer.Option("--include-raw-content", help="Request raw content when supported: true, markdown, or text")] = None,
     include_answer: Annotated[str | None, typer.Option("--include-answer", help="Request provider answer/summary when supported: true, basic, or advanced")] = None,
+    provider_options: Annotated[str | None, typer.Option("--provider-options", help="Provider-specific options as JSON object")] = None,
+    provider_options_file: Annotated[str | None, typer.Option("--provider-options-file", help="Path to provider-specific options JSON file")] = None,
     source_profile: Annotated[str, typer.Option("--source-profile", help="Source profile: balanced, official, or community")] = "balanced",
     strict: Annotated[bool, typer.Option("--strict", help="Enable strict mode: more iterations, followups, extraction")] = False,
     compact: Annotated[bool, typer.Option("--compact", help="Output compact JSON with key fields only")] = False,
@@ -155,6 +170,7 @@ def deep(
             extract_top=extract_top,
             extract_max_chars=extract_max_chars,
             constraints=constraints,
+            provider_options=parse_provider_options(provider_options, provider_options_file),
         )
     )
     print_json(response, compact=compact)
@@ -177,6 +193,8 @@ def verify(
     safe_search: Annotated[str | None, typer.Option("--safe-search", help="Safe search: off, moderate, or strict")] = None,
     include_raw_content: Annotated[str | None, typer.Option("--include-raw-content", help="Request raw content when supported: true, markdown, or text")] = None,
     include_answer: Annotated[str | None, typer.Option("--include-answer", help="Request provider answer/summary when supported: true, basic, or advanced")] = None,
+    provider_options: Annotated[str | None, typer.Option("--provider-options", help="Provider-specific options as JSON object")] = None,
+    provider_options_file: Annotated[str | None, typer.Option("--provider-options-file", help="Path to provider-specific options JSON file")] = None,
     source_profile: Annotated[str, typer.Option("--source-profile", help="Source profile: balanced, official, or community")] = "balanced",
     strict: Annotated[bool, typer.Option("--strict", help="Enable strict mode: more extraction, higher thresholds")] = False,
     compact: Annotated[bool, typer.Option("--compact", help="Output compact JSON with key fields only")] = False,
@@ -207,6 +225,7 @@ def verify(
             extract_top=extract_top,
             extract_max_chars=extract_max_chars,
             constraints=constraints,
+            provider_options=parse_provider_options(provider_options, provider_options_file),
         )
     )
     print_json(response, compact=compact)
@@ -237,6 +256,15 @@ def parse_provider_names(value: str | None) -> list[str] | None:
     if not value:
         return None
     return [name.strip() for name in value.split(",") if name.strip()]
+
+
+def parse_provider_options(inline_value: str | None, file_path: str | None):
+    try:
+        file_options = parse_provider_options_file(file_path)
+        inline_options = parse_provider_options_text(inline_value)
+        return merge_provider_options(inline_options, file_options)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
 
 if __name__ == "__main__":
