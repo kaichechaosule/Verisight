@@ -44,10 +44,11 @@ class DuckDuckGoProvider:
             raise ProviderError("DuckDuckGo provider requires the optional ddgs package") from exc
 
         with DDGS(timeout=int(self.config.timeout_seconds)) as ddgs:
+            duckduckgo_options = request.provider_options_for(self.name)
             kwargs = {
                 "region": _ddg_region(request.country),
                 "safesearch": _ddg_safesearch(request.safe_search),
-                "backend": "auto",
+                "backend": duckduckgo_options.get("backend", "auto"),
                 "max_results": request.max_results,
             }
             timelimit = _ddg_timelimit(request.time_range)
@@ -59,6 +60,7 @@ class DuckDuckGoProvider:
                 results = list(ddgs.text(request.query, **kwargs))
 
         items: list[SearchItem] = []
+        backend = str(kwargs["backend"])
         for index, item in enumerate(results[:request.max_results], start=1):
             url = str(item.get("href") or item.get("url") or "")
             if not url:
@@ -74,7 +76,7 @@ class DuckDuckGoProvider:
                     provider=self.name,
                     score=1.0 / index,
                     domain=urlparse(url).netloc,
-                    metadata={"rank": index, "backend": "ddgs:auto"},
+                    metadata={"rank": index, "backend": f"ddgs:{backend}"},
                 )
             )
         return items

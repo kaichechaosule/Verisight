@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from verisight.providers.brave import BraveProvider
 from verisight.providers.base import ProviderConfig
+from verisight.providers.duckduckgo import DuckDuckGoProvider
 from verisight.providers.exa import ExaProvider
 from verisight.providers.tavily import TavilyProvider
 from verisight.provider_options import ProviderOptionsMap
@@ -42,6 +43,23 @@ class FakeAsyncClient:
         return FakeResponse({"results": []})
 
 
+class FakeDDGS:
+    last_text: dict | None = None
+
+    def __init__(self, *args, **kwargs) -> None:
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def text(self, query: str, **kwargs):
+        FakeDDGS.last_text = {"query": query, **kwargs}
+        return [{"href": "https://example.com", "title": "Example", "body": "Example body"}]
+
+
 def request() -> SearchRequest:
     return SearchRequest(
         query="latest API docs",
@@ -79,6 +97,36 @@ class ProviderParamTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(params["safesearch"], "strict")
         self.assertEqual(params["freshness"], "2025-01-01to2025-12-31")
         self.assertEqual(params["result_filter"], "news")
+
+    async def test_brave_maps_provider_specific_options(self) -> None:
+        FakeAsyncClient.last_get = None
+        provider = BraveProvider(ProviderConfig("key"))
+        search_request = SearchRequest(
+            query="latest API docs",
+            mode=SearchMode.news,
+            max_results=7,
+            provider_options=ProviderOptionsMap.model_validate(
+                {
+                    "brave": {
+                        "result_filter": ["web", "news"],
+                        "spellcheck": False,
+                        "text_decorations": False,
+                        "extra_snippets": True,
+                        "offset": 10,
+                    }
+                }
+            ),
+        )
+
+        with patch("httpx.AsyncClient", FakeAsyncClient):
+            await provider.search(search_request)
+
+        params = FakeAsyncClient.last_get["params"]  # type: ignore[index]
+        self.assertEqual(params["result_filter"], "web,news")
+        self.assertFalse(params["spellcheck"])
+        self.assertFalse(params["text_decorations"])
+        self.assertTrue(params["extra_snippets"])
+        self.assertEqual(params["offset"], 10)
 
     async def test_tavily_maps_native_p0_params(self) -> None:
         FakeAsyncClient.last_post = None
@@ -186,6 +234,24 @@ class ProviderParamTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(payload["contents"]["highlights"])
         self.assertTrue(payload["contents"]["summary"])
         self.assertEqual(payload["subpages"], 2)
+
+    async def test_duckduckgo_maps_backend_option(self) -> None:
+        FakeDDGS.last_text = None
+        provider = DuckDuckGoProvider(ProviderConfig(None))
+        search_request = SearchRequest(
+            query="latest API docs",
+            mode=SearchMode.search,
+            max_results=7,
+            provider_options=ProviderOptionsMap.model_validate({"duckduckgo": {"backend": "html"}}),
+        )
+
+        with patch("ddgs.DDGS", FakeDDGS):
+            results = await provider.search(search_request)
+
+        self.assertEqual(FakeDDGS.last_text["query"], "latest API docs")  # type: ignore[index]
+        self.assertEqual(FakeDDGS.last_text["backend"], "html")  # type: ignore[index]
+        self.assertEqual(FakeDDGS.last_text["max_results"], 7)  # type: ignore[index]
+        self.assertEqual(results[0].metadata["backend"], "ddgs:html")
 
 
 class RedactionTests(unittest.TestCase):

@@ -130,6 +130,16 @@ PROVIDER_CONSUMED_OPTION_KEYS = {
         "summary",
         "subpages",
     },
+    "brave": {
+        "result_filter",
+        "spellcheck",
+        "text_decorations",
+        "extra_snippets",
+        "offset",
+    },
+    "duckduckgo": {
+        "backend",
+    },
 }
 
 

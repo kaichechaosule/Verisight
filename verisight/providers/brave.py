@@ -47,8 +47,19 @@ class BraveProvider:
         freshness = _brave_freshness(request)
         if freshness:
             params["freshness"] = freshness
-        if request.mode.value == "news":
+        brave_options = request.provider_options_for(self.name)
+        if brave_options.get("result_filter"):
+            params["result_filter"] = ",".join(brave_options["result_filter"])
+        elif request.mode.value == "news":
             params["result_filter"] = "news"
+        for option_key, param_key in (
+            ("spellcheck", "spellcheck"),
+            ("text_decorations", "text_decorations"),
+            ("extra_snippets", "extra_snippets"),
+            ("offset", "offset"),
+        ):
+            if option_key in brave_options:
+                params[param_key] = brave_options[option_key]
 
         async with httpx.AsyncClient(timeout=self.config.timeout_seconds) as client:
             response = await client.get(

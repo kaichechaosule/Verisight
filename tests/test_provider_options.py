@@ -106,7 +106,7 @@ class ProviderOptionsBrokerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.diagnostics[0].provider_options_applied, {"search_depth": "advanced"})
         self.assertTrue(any("provider-specific options" in reason for reason in response.routing["routing_reason"]))
 
-    async def test_unimplemented_provider_options_are_reported_as_ignored(self) -> None:
+    async def test_implemented_brave_options_are_reported_as_applied(self) -> None:
         class BraveRecordingProvider(RecordingProvider):
             name = "brave"
 
@@ -116,10 +116,23 @@ class ProviderOptionsBrokerTests(unittest.IsolatedAsyncioTestCase):
 
         response = await broker.search("query", SearchMode.search, ["brave"], 5, provider_options=options)
 
-        self.assertEqual(response.diagnostics[0].provider_options_applied, {})
+        self.assertEqual(response.diagnostics[0].provider_options_applied, {"spellcheck": True})
+        self.assertEqual(response.diagnostics[0].provider_options_ignored, {})
+
+    async def test_unimplemented_duckduckgo_page_option_is_reported_as_ignored(self) -> None:
+        class DuckDuckGoRecordingProvider(RecordingProvider):
+            name = "duckduckgo"
+
+        provider = DuckDuckGoRecordingProvider()
+        broker = SearchBroker({"duckduckgo": provider})
+        options = ProviderOptionsMap.model_validate({"duckduckgo": {"backend": "html", "page": 2}})
+
+        response = await broker.search("query", SearchMode.search, ["duckduckgo"], 5, provider_options=options)
+
+        self.assertEqual(response.diagnostics[0].provider_options_applied, {"backend": "html"})
         self.assertEqual(
             response.diagnostics[0].provider_options_ignored,
-            {"spellcheck": "provider option is validated but not implemented by this provider yet"},
+            {"page": "provider option is validated but not implemented by this provider yet"},
         )
 
 
