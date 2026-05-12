@@ -37,12 +37,19 @@ Common options for `search`, `deep`, and `verify`:
 - `--compact`: smaller JSON for token-sensitive agent use.
 - `--source-profile balanced|official|community`: choose general, authoritative, or forum/community sources.
 - `--strict`: increase deterministic search depth and extraction breadth without adding LLM calls.
+- `--country` / `--language`: pass provider-native region and language hints when supported.
+- `--safe-search off|moderate|strict`: request provider-native safe search filtering when supported.
+- `--time-range day|week|month|year`: request relative freshness filtering when supported.
+- `--include-raw-content [true|markdown|text]`: request provider-native raw content when supported.
+- `--include-answer [true|basic|advanced]`: request provider-native answer/summary generation when supported.
 
 Advanced filters:
 
 - `--allowed-domains` / `--excluded-domains`: keep or remove domains, including subdomains.
 - `--from-date` / `--to-date`: filter when result dates are available.
 - `--providers`: manually select search providers.
+
+Provider-native support varies. Verisight reports diagnostics showing which requested parameters were handled natively and which were applied as post-processing fallbacks.
 
 Forum/community sources are useful for discovery, debugging, and user reports. They should not be treated as primary evidence for high-confidence factual verdicts.
 
