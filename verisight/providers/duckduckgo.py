@@ -27,6 +27,7 @@ class DuckDuckGoProvider:
         return ProviderCapabilities(
             native_time_range=True,
             native_country=True,
+            native_language=True,
             native_safe_search=True,
             native_news=True,
         )
@@ -46,7 +47,7 @@ class DuckDuckGoProvider:
         with DDGS(timeout=int(self.config.timeout_seconds)) as ddgs:
             duckduckgo_options = request.provider_options_for(self.name)
             kwargs = {
-                "region": _ddg_region(request.country),
+                "region": _ddg_region(request.country, request.language),
                 "safesearch": _ddg_safesearch(request.safe_search),
                 "backend": duckduckgo_options.get("backend", "auto"),
                 "max_results": request.max_results,
@@ -82,13 +83,32 @@ class DuckDuckGoProvider:
         return items
 
 
-def _ddg_region(country: str | None) -> str:
+def _ddg_region(country: str | None, language: str | None = None) -> str:
     if not country:
         return "wt-wt"
-    value = country.lower()
-    if "-" in value:
-        return value
-    return f"{value}-{value}"
+    country_code = country.lower().replace("_", "-")
+    if "-" in country_code:
+        return country_code
+    language_code = _ddg_language_code(country_code, language)
+    return f"{country_code}-{language_code}"
+
+
+def _ddg_language_code(country_code: str, language: str | None) -> str:
+    if language:
+        normalized = language.lower().replace("_", "-")
+        if normalized in {"zh", "zh-cn", "zh-hans"}:
+            return "zh"
+        if normalized in {"zh-tw", "zh-hk", "zh-hant"}:
+            return "tzh"
+        return normalized.split("-", 1)[0]
+    return {
+        "cn": "zh",
+        "hk": "tzh",
+        "jp": "jp",
+        "tw": "tzh",
+        "uk": "en",
+        "us": "en",
+    }.get(country_code, country_code)
 
 
 def _ddg_timelimit(time_range: str | None) -> str | None:

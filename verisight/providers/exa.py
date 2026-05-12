@@ -27,6 +27,7 @@ class ExaProvider:
         return ProviderCapabilities(
             native_domains=True,
             native_date_range=True,
+            native_country=True,
             native_raw_content=True,
         )
 
@@ -58,6 +59,8 @@ class ExaProvider:
             payload["includeDomains"] = request.allowed_domains
         if request.excluded_domains:
             payload["excludeDomains"] = request.excluded_domains
+        if request.country:
+            payload["userLocation"] = request.country.lower()
         if request.from_date:
             payload["startPublishedDate"] = request.from_date
         if request.to_date:

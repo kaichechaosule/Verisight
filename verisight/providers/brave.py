@@ -37,11 +37,19 @@ class BraveProvider:
         if not self.config.api_key:
             raise ProviderError("BRAVE_API_KEY is not set")
 
-        params: dict[str, str | int | bool] = {"q": request.query, "count": min(request.max_results, 20)}
+        params: dict[str, str | int | bool] = {
+            "q": request.query,
+            "count": min(request.max_results, 20),
+            "spellcheck": "0",
+        }
         if request.country:
             params["country"] = request.country
         if request.language:
-            params["search_lang"] = request.language
+            search_lang = _brave_search_language(request.language)
+            params["search_lang"] = search_lang
+            ui_lang = _brave_ui_language(request.language, request.country, search_lang)
+            if ui_lang:
+                params["ui_lang"] = ui_lang
         if request.safe_search:
             params["safesearch"] = request.safe_search
         freshness = _brave_freshness(request)
@@ -52,8 +60,9 @@ class BraveProvider:
             params["result_filter"] = ",".join(brave_options["result_filter"])
         elif request.mode.value == "news":
             params["result_filter"] = "news"
+        if "spellcheck" in brave_options:
+            params["spellcheck"] = "1" if brave_options["spellcheck"] else "0"
         for option_key, param_key in (
-            ("spellcheck", "spellcheck"),
             ("text_decorations", "text_decorations"),
             ("extra_snippets", "extra_snippets"),
             ("offset", "offset"),
@@ -101,4 +110,26 @@ def _brave_freshness(request: SearchRequest) -> str | None:
         return "pm"
     if request.time_range == "year":
         return "py"
+    return None
+
+
+def _brave_search_language(language: str) -> str:
+    normalized = language.lower().replace("_", "-")
+    if normalized in {"zh", "zh-cn", "zh-sg", "zh-hans"}:
+        return "zh-hans"
+    if normalized in {"zh-tw", "zh-hk", "zh-mo", "zh-hant"}:
+        return "zh-hant"
+    return normalized
+
+
+def _brave_ui_language(language: str, country: str | None, search_lang: str) -> str | None:
+    normalized = language.lower().replace("_", "-")
+    if search_lang == "zh-hans":
+        return "zh-CN"
+    if search_lang == "zh-hant":
+        return "zh-TW"
+    if normalized == "en":
+        return "en-US"
+    if len(normalized) == 2 and country:
+        return f"{normalized}-{country.upper()}"
     return None
