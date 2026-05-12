@@ -60,6 +60,25 @@ class FakeDDGS:
         return [{"href": "https://example.com", "title": "Example", "body": "Example body"}]
 
 
+def last_get_params() -> dict:
+    assert FakeAsyncClient.last_get is not None
+    params = FakeAsyncClient.last_get["params"]
+    assert isinstance(params, dict)
+    return params
+
+
+def last_post_json() -> dict:
+    assert FakeAsyncClient.last_post is not None
+    payload = FakeAsyncClient.last_post["json"]
+    assert isinstance(payload, dict)
+    return payload
+
+
+def last_ddg_text() -> dict:
+    assert FakeDDGS.last_text is not None
+    return FakeDDGS.last_text
+
+
 def request() -> SearchRequest:
     return SearchRequest(
         query="latest API docs",
@@ -89,14 +108,51 @@ class ProviderParamTests(unittest.IsolatedAsyncioTestCase):
         with patch("httpx.AsyncClient", FakeAsyncClient):
             await provider.search(request())
 
-        params = FakeAsyncClient.last_get["params"]  # type: ignore[index]
+        params = last_get_params()
         self.assertEqual(params["q"], "latest API docs")
         self.assertEqual(params["count"], 7)
         self.assertEqual(params["country"], "US")
         self.assertEqual(params["search_lang"], "en")
+        self.assertEqual(params["ui_lang"], "en-US")
+        self.assertEqual(params["spellcheck"], "0")
         self.assertEqual(params["safesearch"], "strict")
         self.assertEqual(params["freshness"], "2025-01-01to2025-12-31")
         self.assertEqual(params["result_filter"], "news")
+
+    async def test_brave_maps_chinese_language_for_api(self) -> None:
+        FakeAsyncClient.last_get = None
+        provider = BraveProvider(ProviderConfig("key"))
+        search_request = SearchRequest(
+            query="andnode 云服务器",
+            max_results=5,
+            constraints=SearchConstraints(country="CN", language="zh"),
+        )
+
+        with patch("httpx.AsyncClient", FakeAsyncClient):
+            await provider.search(search_request)
+
+        params = last_get_params()
+        self.assertEqual(params["q"], "andnode 云服务器")
+        self.assertEqual(params["country"], "CN")
+        self.assertEqual(params["search_lang"], "zh-hans")
+        self.assertEqual(params["ui_lang"], "zh-CN")
+        self.assertEqual(params["spellcheck"], "0")
+
+    async def test_brave_maps_traditional_chinese_language_for_api(self) -> None:
+        FakeAsyncClient.last_get = None
+        provider = BraveProvider(ProviderConfig("key"))
+        search_request = SearchRequest(
+            query="andnode 雲伺服器",
+            max_results=5,
+            constraints=SearchConstraints(country="TW", language="zh-tw"),
+        )
+
+        with patch("httpx.AsyncClient", FakeAsyncClient):
+            await provider.search(search_request)
+
+        params = last_get_params()
+        self.assertEqual(params["search_lang"], "zh-hant")
+        self.assertEqual(params["ui_lang"], "zh-TW")
 
     async def test_brave_maps_provider_specific_options(self) -> None:
         FakeAsyncClient.last_get = None
@@ -121,12 +177,26 @@ class ProviderParamTests(unittest.IsolatedAsyncioTestCase):
         with patch("httpx.AsyncClient", FakeAsyncClient):
             await provider.search(search_request)
 
-        params = FakeAsyncClient.last_get["params"]  # type: ignore[index]
+        params = last_get_params()
         self.assertEqual(params["result_filter"], "web,news")
-        self.assertFalse(params["spellcheck"])
+        self.assertEqual(params["spellcheck"], "0")
         self.assertFalse(params["text_decorations"])
         self.assertTrue(params["extra_snippets"])
         self.assertEqual(params["offset"], 10)
+
+    async def test_brave_spellcheck_provider_option_can_enable_api_spellcheck(self) -> None:
+        FakeAsyncClient.last_get = None
+        provider = BraveProvider(ProviderConfig("key"))
+        search_request = SearchRequest(
+            query="andnode",
+            provider_options=ProviderOptionsMap.model_validate({"brave": {"spellcheck": True}}),
+        )
+
+        with patch("httpx.AsyncClient", FakeAsyncClient):
+            await provider.search(search_request)
+
+        params = last_get_params()
+        self.assertEqual(params["spellcheck"], "1")
 
     async def test_tavily_maps_native_p0_params(self) -> None:
         FakeAsyncClient.last_post = None
@@ -135,7 +205,7 @@ class ProviderParamTests(unittest.IsolatedAsyncioTestCase):
         with patch("httpx.AsyncClient", FakeAsyncClient):
             await provider.search(request())
 
-        payload = FakeAsyncClient.last_post["json"]  # type: ignore[index]
+        payload = last_post_json()
         self.assertEqual(payload["query"], "latest API docs")
         self.assertEqual(payload["max_results"], 7)
         self.assertEqual(payload["search_depth"], "advanced")
@@ -173,7 +243,7 @@ class ProviderParamTests(unittest.IsolatedAsyncioTestCase):
         with patch("httpx.AsyncClient", FakeAsyncClient):
             await provider.search(search_request)
 
-        payload = FakeAsyncClient.last_post["json"]  # type: ignore[index]
+        payload = last_post_json()
         self.assertEqual(payload["search_depth"], "advanced")
         self.assertEqual(payload["topic"], "news")
         self.assertEqual(payload["chunks_per_source"], 3)
@@ -189,11 +259,12 @@ class ProviderParamTests(unittest.IsolatedAsyncioTestCase):
         with patch("httpx.AsyncClient", FakeAsyncClient):
             await provider.search(request())
 
-        payload = FakeAsyncClient.last_post["json"]  # type: ignore[index]
+        payload = last_post_json()
         self.assertEqual(payload["query"], "latest API docs")
         self.assertEqual(payload["numResults"], 7)
         self.assertEqual(payload["includeDomains"], ["docs.example.com"])
         self.assertEqual(payload["excludeDomains"], ["spam.example.com"])
+        self.assertEqual(payload["userLocation"], "us")
         self.assertEqual(payload["startPublishedDate"], "2025-01-01")
         self.assertEqual(payload["endPublishedDate"], "2025-12-31")
         self.assertTrue(payload["contents"]["text"])
@@ -225,7 +296,7 @@ class ProviderParamTests(unittest.IsolatedAsyncioTestCase):
         with patch("httpx.AsyncClient", FakeAsyncClient):
             await provider.search(search_request)
 
-        payload = FakeAsyncClient.last_post["json"]  # type: ignore[index]
+        payload = last_post_json()
         self.assertEqual(payload["type"], "neural")
         self.assertEqual(payload["category"], "research paper")
         self.assertEqual(payload["livecrawl"], "fallback")
@@ -248,10 +319,39 @@ class ProviderParamTests(unittest.IsolatedAsyncioTestCase):
         with patch("ddgs.DDGS", FakeDDGS):
             results = await provider.search(search_request)
 
-        self.assertEqual(FakeDDGS.last_text["query"], "latest API docs")  # type: ignore[index]
-        self.assertEqual(FakeDDGS.last_text["backend"], "html")  # type: ignore[index]
-        self.assertEqual(FakeDDGS.last_text["max_results"], 7)  # type: ignore[index]
+        ddg_text = last_ddg_text()
+        self.assertEqual(ddg_text["query"], "latest API docs")
+        self.assertEqual(ddg_text["backend"], "html")
+        self.assertEqual(ddg_text["max_results"], 7)
         self.assertEqual(results[0].metadata["backend"], "ddgs:html")
+
+    async def test_duckduckgo_maps_country_and_language_to_region(self) -> None:
+        FakeDDGS.last_text = None
+        provider = DuckDuckGoProvider(ProviderConfig(None))
+        search_request = SearchRequest(
+            query="andnode 云服务器",
+            max_results=7,
+            constraints=SearchConstraints(country="CN", language="zh"),
+        )
+
+        with patch("ddgs.DDGS", FakeDDGS):
+            await provider.search(search_request)
+
+        self.assertEqual(last_ddg_text()["region"], "cn-zh")
+
+    async def test_duckduckgo_defaults_country_to_known_region_language(self) -> None:
+        FakeDDGS.last_text = None
+        provider = DuckDuckGoProvider(ProviderConfig(None))
+        search_request = SearchRequest(
+            query="latest API docs",
+            max_results=7,
+            constraints=SearchConstraints(country="US"),
+        )
+
+        with patch("ddgs.DDGS", FakeDDGS):
+            await provider.search(search_request)
+
+        self.assertEqual(last_ddg_text()["region"], "us-en")
 
 
 class RedactionTests(unittest.TestCase):
