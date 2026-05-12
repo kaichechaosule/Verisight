@@ -192,6 +192,7 @@ class EvidenceClassificationTests(unittest.TestCase):
         )
         evidence = classify_evidence(claim, item, "discovery")
         self.assertIsNotNone(evidence.claim_frame)
+        assert evidence.claim_frame is not None
         self.assertEqual(evidence.claim_frame.original, claim)
 
     def test_evidence_has_quotes(self) -> None:

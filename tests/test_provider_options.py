@@ -51,6 +51,7 @@ class ProviderOptionsModelTests(unittest.TestCase):
         options = parse_provider_options_text('{"tavily":{"search_depth":"advanced"},"exa":{"livecrawl":"fallback"}}')
 
         self.assertIsNotNone(options)
+        assert options is not None
         self.assertEqual(options.applied_for("tavily"), {"search_depth": "advanced"})
         self.assertEqual(options.applied_for("exa"), {"livecrawl": "fallback"})
 
@@ -73,6 +74,7 @@ class ProviderOptionsModelTests(unittest.TestCase):
         merged = merge_provider_options(inline_options, file_options)
 
         self.assertIsNotNone(merged)
+        assert merged is not None
         self.assertEqual(merged.applied_for("tavily"), {"search_depth": "advanced"})
         self.assertEqual(merged.applied_for("exa"), {"summary": True})
 
@@ -86,6 +88,7 @@ class ProviderOptionsCliTests(unittest.TestCase):
         options = parse_provider_options('{"tavily":{"search_depth":"advanced"}}', path)
 
         self.assertIsNotNone(options)
+        assert options is not None
         self.assertEqual(options.applied_for("tavily"), {"search_depth": "advanced"})
         self.assertEqual(options.applied_for("exa"), {"summary": True})
 
@@ -102,6 +105,7 @@ class ProviderOptionsBrokerTests(unittest.IsolatedAsyncioTestCase):
 
         response = await broker.search("query", SearchMode.search, ["tavily"], 5, provider_options=options)
 
+        assert provider.last_request is not None
         self.assertEqual(provider.last_request.provider_options_for("tavily"), {"search_depth": "advanced"})
         self.assertEqual(response.diagnostics[0].provider_options_applied, {"search_depth": "advanced"})
         self.assertTrue(any("provider-specific options" in reason for reason in response.routing["routing_reason"]))

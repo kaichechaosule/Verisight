@@ -202,6 +202,8 @@ class BrokerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first.diagnostics[0].circuit_state, "open")
         self.assertFalse(second.diagnostics[0].ok)
         self.assertEqual(second.diagnostics[0].attempts, 0)
+        self.assertIsNotNone(second.diagnostics[0].error)
+        assert second.diagnostics[0].error is not None
         self.assertIn("circuit is open", second.diagnostics[0].error)
         self.assertEqual(provider.calls, 1)
 
