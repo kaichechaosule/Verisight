@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 import httpx
 
-from verisight.schema import ProviderCapabilities, SearchItem, SearchRequest
+from verisight.schema import ExtractResponse, ProviderCapabilities, SearchItem, SearchRequest
 
 
 class ProviderError(RuntimeError):
@@ -35,6 +35,20 @@ class SearchProvider(Protocol):
         raise NotImplementedError
 
     async def search(self, request: SearchRequest) -> list[SearchItem]:
+        raise NotImplementedError
+
+
+@runtime_checkable
+class ExtractProvider(Protocol):
+    name: str
+
+    def available(self) -> bool:
+        raise NotImplementedError
+
+    def supports_extract(self) -> bool:
+        raise NotImplementedError
+
+    async def extract(self, url: str) -> ExtractResponse:
         raise NotImplementedError
 
 

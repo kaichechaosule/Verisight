@@ -7,7 +7,7 @@ import httpx
 
 from verisight.deep import build_evidence_graph, generate_follow_up_queries
 from verisight.provider_options import split_consumed_provider_options
-from verisight.providers.base import ProviderError, SearchProvider, unsupported_params
+from verisight.providers.base import ExtractProvider, ProviderError, SearchProvider, unsupported_params
 from verisight.rank import build_citations, dedupe_and_rank
 from verisight.resilience import ProviderHealthRegistry
 from verisight.router import route_query
@@ -16,6 +16,7 @@ from verisight.schema import (
     DeepSearchResponse,
     ExtractedEvidence,
     ProviderDiagnostic,
+    ProviderCapabilities,
     ProviderOptionsMap,
     QueryResultSet,
     SearchConstraints,
@@ -336,7 +337,11 @@ class SearchBroker:
     ) -> list[ExtractedEvidence]:
         if extract_top <= 0:
             return []
-        extractors = [provider for provider in self.providers.values() if provider.available() and provider.supports_extract()]
+        extractors = [
+            provider
+            for provider in self.providers.values()
+            if isinstance(provider, ExtractProvider) and provider.available() and provider.supports_extract()
+        ]
         if not extractors:
             return []
         extractor = extractors[0]
@@ -347,12 +352,10 @@ class SearchBroker:
 
     async def _extract_url(
         self,
-        extractor: SearchProvider,
+        extractor: ExtractProvider,
         url: str,
         max_chars: int,
     ) -> ExtractedEvidence | None:
-        if not hasattr(extractor, "extract"):
-            return None
         try:
             response = await extractor.extract(url)
         except (ProviderError, TimeoutError, httpx.HTTPError):

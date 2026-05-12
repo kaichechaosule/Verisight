@@ -10,6 +10,7 @@ from verisight.constraints import build_constraints
 from verisight.config import load_settings
 from verisight.output import to_json_text
 from verisight.provider_options import merge_provider_options, parse_provider_options_file, parse_provider_options_text, provider_option_schema
+from verisight.providers.base import ExtractProvider
 from verisight.registry import build_providers
 from verisight.router import route_query
 from verisight.schema import SearchMode
@@ -239,7 +240,7 @@ def extract(
 ) -> None:
     providers_by_name = build_providers(load_settings())
     selected = providers_by_name.get(provider)
-    if selected is None or not selected.supports_extract() or not hasattr(selected, "extract"):
+    if selected is None or not isinstance(selected, ExtractProvider) or not selected.supports_extract():
         raise typer.BadParameter(f"Provider {provider} does not support extraction")
     response = asyncio.run(selected.extract(url))
     if len(response.content) > max_chars:

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
+
+
+@runtime_checkable
+class JsonModel(Protocol):
+    def model_dump(self, *, mode: str) -> dict[str, Any]: ...
 
 
 def to_json_text(value: object, compact: bool = False) -> str:
     """Serialize a Pydantic model or plain object to JSON text."""
-    if hasattr(value, "model_dump"):
+    if isinstance(value, JsonModel):
         payload = value.model_dump(mode="json")
     else:
         payload = value

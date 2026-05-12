@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field
 
 from verisight.provider_options import ProviderOptionsMap
 
@@ -103,7 +103,7 @@ class SearchResponse(BaseModel):
 
 
 class ExtractResponse(BaseModel):
-    url: HttpUrl
+    url: str
     provider: str
     title: str | None = None
     content: str
