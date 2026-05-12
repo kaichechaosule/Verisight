@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, HttpUrl
 
+from verisight.provider_options import ProviderOptionsMap
+
 
 class SearchMode(StrEnum):
     search = "search"
@@ -77,6 +79,9 @@ class ProviderDiagnostic(BaseModel):
     native_params: list[str] = Field(default_factory=list)
     post_processed_params: list[str] = Field(default_factory=list)
     ignored_params: list[str] = Field(default_factory=list)
+    provider_options_applied: dict[str, Any] = Field(default_factory=dict)
+    provider_options_ignored: dict[str, str] = Field(default_factory=dict)
+    provider_options_conflicts: dict[str, str] = Field(default_factory=dict)
 
 
 class Citation(BaseModel):
@@ -111,6 +116,7 @@ class RouteResponse(BaseModel):
     selected_providers: list[str]
     reason: str
     confidence: float
+    routing_reason: list[str] = Field(default_factory=list)
 
 
 class ExtractedEvidence(BaseModel):
@@ -252,6 +258,12 @@ class SearchRequest(BaseModel):
     mode: SearchMode = SearchMode.search
     max_results: int = 10
     constraints: SearchConstraints | None = None
+    provider_options: ProviderOptionsMap | None = None
+
+    def provider_options_for(self, provider_name: str) -> dict[str, Any]:
+        if self.provider_options is None:
+            return {}
+        return self.provider_options.applied_for(provider_name)
 
     @property
     def allowed_domains(self) -> list[str]:
