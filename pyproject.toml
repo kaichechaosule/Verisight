@@ -1,6 +1,6 @@
 [project]
 name = "verisight"
-version = "0.3.0"
+version = "0.3.1"
 description = "Verisight（洞真）: CLI-first web search and evidence verification for coding agents."
 readme = "README.md"
 requires-python = ">=3.11"
