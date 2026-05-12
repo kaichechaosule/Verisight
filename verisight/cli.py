@@ -28,6 +28,17 @@ def print_json(value: object, compact: bool = False) -> None:
         raise typer.BadParameter(str(exc)) from exc
 
 
+def parse_optional_bool_or_level(value: str | None) -> bool | str:
+    if value is None:
+        return False
+    normalized = value.strip().lower()
+    if normalized in {"", "true", "yes", "1", "on"}:
+        return True
+    if normalized in {"false", "no", "0", "off"}:
+        return False
+    return normalized
+
+
 @app.command()
 def providers() -> None:
     search_broker = broker()
@@ -37,6 +48,7 @@ def providers() -> None:
             "available": provider.available(),
             "supports_search": provider.supports_search(),
             "supports_extract": provider.supports_extract(),
+            "capabilities": provider.capabilities().model_dump(),
         }
         for name, provider in search_broker.providers.items()
     ]
@@ -63,11 +75,30 @@ def search(
     excluded_domains: Annotated[str | None, typer.Option("--excluded-domains", help="Comma-separated excluded domains")] = None,
     from_date: Annotated[str | None, typer.Option("--from-date", help="Filter results from this date (YYYY-MM-DD)")] = None,
     to_date: Annotated[str | None, typer.Option("--to-date", help="Filter results to this date (YYYY-MM-DD)")] = None,
+    time_range: Annotated[str | None, typer.Option("--time-range", help="Relative time range: day, week, month, or year")] = None,
+    country: Annotated[str | None, typer.Option("--country", help="Provider-native country/region hint when supported")] = None,
+    language: Annotated[str | None, typer.Option("--language", help="Provider-native language hint when supported")] = None,
+    safe_search: Annotated[str | None, typer.Option("--safe-search", help="Safe search: off, moderate, or strict")] = None,
+    include_raw_content: Annotated[str | None, typer.Option("--include-raw-content", help="Request raw content when supported: true, markdown, or text")] = None,
+    include_answer: Annotated[str | None, typer.Option("--include-answer", help="Request provider answer/summary when supported: true, basic, or advanced")] = None,
     source_profile: Annotated[str, typer.Option("--source-profile", help="Source profile: balanced, official, or community")] = "balanced",
     strict: Annotated[bool, typer.Option("--strict", help="Enable strict verification mode")] = False,
     compact: Annotated[bool, typer.Option("--compact", help="Output compact JSON with key fields only")] = False,
 ) -> None:
-    constraints = build_constraints(allowed_domains, excluded_domains, from_date, to_date, strict, source_profile)
+    constraints = build_constraints(
+        allowed_domains,
+        excluded_domains,
+        from_date,
+        to_date,
+        strict,
+        source_profile,
+        time_range,
+        country,
+        language,
+        safe_search,
+        parse_optional_bool_or_level(include_raw_content),
+        parse_optional_bool_or_level(include_answer),
+    )
     response = asyncio.run(broker().search(query, mode, parse_provider_names(providers), max_results, constraints))
     print_json(response, compact=compact)
 
@@ -85,11 +116,30 @@ def deep(
     excluded_domains: Annotated[str | None, typer.Option("--excluded-domains", help="Comma-separated excluded domains")] = None,
     from_date: Annotated[str | None, typer.Option("--from-date", help="Filter results from this date (YYYY-MM-DD)")] = None,
     to_date: Annotated[str | None, typer.Option("--to-date", help="Filter results to this date (YYYY-MM-DD)")] = None,
+    time_range: Annotated[str | None, typer.Option("--time-range", help="Relative time range: day, week, month, or year")] = None,
+    country: Annotated[str | None, typer.Option("--country", help="Provider-native country/region hint when supported")] = None,
+    language: Annotated[str | None, typer.Option("--language", help="Provider-native language hint when supported")] = None,
+    safe_search: Annotated[str | None, typer.Option("--safe-search", help="Safe search: off, moderate, or strict")] = None,
+    include_raw_content: Annotated[str | None, typer.Option("--include-raw-content", help="Request raw content when supported: true, markdown, or text")] = None,
+    include_answer: Annotated[str | None, typer.Option("--include-answer", help="Request provider answer/summary when supported: true, basic, or advanced")] = None,
     source_profile: Annotated[str, typer.Option("--source-profile", help="Source profile: balanced, official, or community")] = "balanced",
     strict: Annotated[bool, typer.Option("--strict", help="Enable strict mode: more iterations, followups, extraction")] = False,
     compact: Annotated[bool, typer.Option("--compact", help="Output compact JSON with key fields only")] = False,
 ) -> None:
-    constraints = build_constraints(allowed_domains, excluded_domains, from_date, to_date, strict, source_profile)
+    constraints = build_constraints(
+        allowed_domains,
+        excluded_domains,
+        from_date,
+        to_date,
+        strict,
+        source_profile,
+        time_range,
+        country,
+        language,
+        safe_search,
+        parse_optional_bool_or_level(include_raw_content),
+        parse_optional_bool_or_level(include_answer),
+    )
     # Apply strict mode defaults
     if strict:
         iterations = max(iterations, 3)
@@ -121,11 +171,30 @@ def verify(
     excluded_domains: Annotated[str | None, typer.Option("--excluded-domains", help="Comma-separated excluded domains")] = None,
     from_date: Annotated[str | None, typer.Option("--from-date", help="Filter results from this date (YYYY-MM-DD)")] = None,
     to_date: Annotated[str | None, typer.Option("--to-date", help="Filter results to this date (YYYY-MM-DD)")] = None,
+    time_range: Annotated[str | None, typer.Option("--time-range", help="Relative time range: day, week, month, or year")] = None,
+    country: Annotated[str | None, typer.Option("--country", help="Provider-native country/region hint when supported")] = None,
+    language: Annotated[str | None, typer.Option("--language", help="Provider-native language hint when supported")] = None,
+    safe_search: Annotated[str | None, typer.Option("--safe-search", help="Safe search: off, moderate, or strict")] = None,
+    include_raw_content: Annotated[str | None, typer.Option("--include-raw-content", help="Request raw content when supported: true, markdown, or text")] = None,
+    include_answer: Annotated[str | None, typer.Option("--include-answer", help="Request provider answer/summary when supported: true, basic, or advanced")] = None,
     source_profile: Annotated[str, typer.Option("--source-profile", help="Source profile: balanced, official, or community")] = "balanced",
     strict: Annotated[bool, typer.Option("--strict", help="Enable strict mode: more extraction, higher thresholds")] = False,
     compact: Annotated[bool, typer.Option("--compact", help="Output compact JSON with key fields only")] = False,
 ) -> None:
-    constraints = build_constraints(allowed_domains, excluded_domains, from_date, to_date, strict, source_profile)
+    constraints = build_constraints(
+        allowed_domains,
+        excluded_domains,
+        from_date,
+        to_date,
+        strict,
+        source_profile,
+        time_range,
+        country,
+        language,
+        safe_search,
+        parse_optional_bool_or_level(include_raw_content),
+        parse_optional_bool_or_level(include_answer),
+    )
     # Apply strict mode defaults
     if strict:
         max_results = max(max_results, 15)

@@ -12,7 +12,7 @@ def to_json_text(value: object, compact: bool = False) -> str:
         payload = value
     if compact and isinstance(payload, dict):
         payload = compact_payload(payload)
-    return json.dumps(payload, ensure_ascii=False, indent=2)
+    return json.dumps(payload, ensure_ascii=True, indent=2)
 
 
 def compact_payload(payload: dict[str, Any]) -> dict[str, Any]:
