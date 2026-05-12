@@ -6,7 +6,7 @@ import time
 import httpx
 
 from verisight.deep import build_evidence_graph, generate_follow_up_queries
-from verisight.providers.base import ProviderError, SearchProvider
+from verisight.providers.base import ProviderError, SearchProvider, unsupported_params
 from verisight.rank import build_citations, dedupe_and_rank
 from verisight.resilience import ProviderHealthRegistry
 from verisight.router import route_query
@@ -19,6 +19,7 @@ from verisight.schema import (
     SearchConstraints,
     SearchItem,
     SearchMode,
+    SearchRequest,
     SearchResponse,
     VerifyQuerySet,
     VerifyResponse,
@@ -61,14 +62,16 @@ class SearchBroker:
             for name in selected
             if name in self.providers and self.providers[name].available() and self.providers[name].supports_search()
         ]
-        tasks = [self._search_provider(name, query, max_results) for name in selected]
+        selected_mode = route.selected_mode
+        request = SearchRequest(query=query, mode=selected_mode, max_results=max_results, constraints=constraints)
+        tasks = [self._search_provider(name, request) for name in selected]
         outcomes = await asyncio.gather(*tasks) if tasks else []
         results_by_provider = {name: items for name, items, _diagnostic in outcomes if items}
         diagnostics = [diagnostic for _name, _items, diagnostic in outcomes]
         ranked = dedupe_and_rank(results_by_provider, max_results, constraints)
         return SearchResponse(
             query=query,
-            mode=route.selected_mode,
+            mode=selected_mode,
             providers_used=selected,
             results=ranked,
             citations=build_citations(ranked),
@@ -217,11 +220,11 @@ class SearchBroker:
     async def _search_provider(
         self,
         name: str,
-        query: str,
-        max_results: int,
+        request: SearchRequest,
     ) -> tuple[str, list[SearchItem], ProviderDiagnostic]:
         start = time.monotonic()
         provider = self.providers[name]
+        native_params, fallback_params = unsupported_params(request, provider.capabilities())
         health = self.health_registry.get(name)
         if not health.can_execute():
             elapsed_ms = int((time.monotonic() - start) * 1000)
@@ -232,6 +235,8 @@ class SearchBroker:
                 error=f"Provider circuit is {health.state}; skipping request.",
                 attempts=0,
                 circuit_state=health.state,
+                native_params=native_params,
+                post_processed_params=fallback_params,
             )
             return name, [], diagnostic
 
@@ -241,7 +246,7 @@ class SearchBroker:
         for attempt_index in range(max_attempts):
             attempts += 1
             try:
-                items = await provider.search(query, max_results)
+                items = await provider.search(request)
                 elapsed_ms = int((time.monotonic() - start) * 1000)
                 self.health_registry.record(name, elapsed_ms, True)
                 return name, items, ProviderDiagnostic(
@@ -251,6 +256,8 @@ class SearchBroker:
                     result_count=len(items),
                     attempts=attempts,
                     circuit_state=health.state,
+                    native_params=native_params,
+                    post_processed_params=fallback_params,
                 )
             except (ProviderError, TimeoutError, httpx.HTTPError) as exc:
                 last_error = exc
@@ -267,6 +274,8 @@ class SearchBroker:
             error=str(last_error) if last_error else "Provider search failed.",
             attempts=attempts,
             circuit_state=health.state,
+            native_params=native_params,
+            post_processed_params=fallback_params,
         )
         return name, [], diagnostic
 

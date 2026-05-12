@@ -3,7 +3,7 @@ import unittest
 from verisight.broker import SearchBroker
 from verisight.providers.base import ProviderError
 from verisight.resilience import ProviderHealthRegistry
-from verisight.schema import ExtractResponse, SearchItem, SearchMode
+from verisight.schema import ExtractResponse, ProviderCapabilities, SearchItem, SearchMode, SearchRequest, SearchConstraints
 from verisight.verify import classify_evidence
 from verisight.workers import ContradictionWorker, DiscoveryWorker, ExtractionWorker, OfficialSourceWorker
 
@@ -20,7 +20,11 @@ class FakeSearchProvider:
     def supports_extract(self) -> bool:
         return False
 
-    async def search(self, query: str, max_results: int) -> list[SearchItem]:
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities()
+
+    async def search(self, request: SearchRequest) -> list[SearchItem]:
+        query = request.query
         contradiction_query = "false" in query or "correction" in query or "deprecated" in query or "controversy" in query
         content = f"{query} official docs evidence limitations"
         title = f"Official docs about {query}"
@@ -52,7 +56,10 @@ class FakeExtractProvider:
     def supports_extract(self) -> bool:
         return True
 
-    async def search(self, query: str, max_results: int) -> list[SearchItem]:
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(native_raw_content=True)
+
+    async def search(self, request: SearchRequest) -> list[SearchItem]:
         return []
 
     async def extract(self, url: str) -> ExtractResponse:
@@ -76,7 +83,10 @@ class FlakySearchProvider:
     def supports_extract(self) -> bool:
         return False
 
-    async def search(self, query: str, max_results: int) -> list[SearchItem]:
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(native_country=True)
+
+    async def search(self, request: SearchRequest) -> list[SearchItem]:
         self.calls += 1
         if self.calls <= self.failures_before_success:
             raise ProviderError(self.error)
@@ -164,6 +174,16 @@ class BrokerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(response.diagnostics[0].ok)
         self.assertEqual(response.diagnostics[0].attempts, 2)
         self.assertEqual(response.diagnostics[0].circuit_state, "closed")
+
+    async def test_diagnostics_report_native_and_post_processed_params(self) -> None:
+        provider = FlakySearchProvider(failures_before_success=0)
+        broker = SearchBroker({"flaky": provider})
+        constraints = SearchConstraints(country="US", allowed_domains=["example.com"])
+
+        response = await broker.search("query", SearchMode.search, ["flaky"], 5, constraints)
+
+        self.assertIn("country", response.diagnostics[0].native_params)
+        self.assertIn("domains", response.diagnostics[0].post_processed_params)
 
     async def test_search_opens_circuit_after_consecutive_failures(self) -> None:
         registry = ProviderHealthRegistry()
