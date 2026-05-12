@@ -5,6 +5,7 @@ from verisight.providers.brave import BraveProvider
 from verisight.providers.base import ProviderConfig
 from verisight.providers.exa import ExaProvider
 from verisight.providers.tavily import TavilyProvider
+from verisight.provider_options import ProviderOptionsMap
 from verisight.schema import SearchConstraints, SearchMode, SearchRequest
 
 
@@ -100,6 +101,38 @@ class ProviderParamTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(payload["include_raw_content"])
         self.assertTrue(payload["include_answer"])
 
+    async def test_tavily_maps_provider_specific_options(self) -> None:
+        FakeAsyncClient.last_post = None
+        provider = TavilyProvider(ProviderConfig("key"))
+        search_request = SearchRequest(
+            query="latest API docs",
+            mode=SearchMode.search,
+            max_results=7,
+            provider_options=ProviderOptionsMap.model_validate(
+                {
+                    "tavily": {
+                        "search_depth": "advanced",
+                        "topic": "news",
+                        "chunks_per_source": 3,
+                        "include_images": True,
+                        "include_image_descriptions": True,
+                        "auto_parameters": True,
+                    }
+                }
+            ),
+        )
+
+        with patch("httpx.AsyncClient", FakeAsyncClient):
+            await provider.search(search_request)
+
+        payload = FakeAsyncClient.last_post["json"]  # type: ignore[index]
+        self.assertEqual(payload["search_depth"], "advanced")
+        self.assertEqual(payload["topic"], "news")
+        self.assertEqual(payload["chunks_per_source"], 3)
+        self.assertTrue(payload["include_images"])
+        self.assertTrue(payload["include_image_descriptions"])
+        self.assertTrue(payload["auto_parameters"])
+
 
     async def test_exa_maps_native_p0_params(self) -> None:
         FakeAsyncClient.last_post = None
@@ -117,6 +150,42 @@ class ProviderParamTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["endPublishedDate"], "2025-12-31")
         self.assertTrue(payload["contents"]["text"])
         self.assertTrue(payload["contents"]["summary"])
+
+    async def test_exa_maps_provider_specific_options(self) -> None:
+        FakeAsyncClient.last_post = None
+        provider = ExaProvider(ProviderConfig("key"))
+        search_request = SearchRequest(
+            query="latest API docs",
+            mode=SearchMode.search,
+            max_results=7,
+            provider_options=ProviderOptionsMap.model_validate(
+                {
+                    "exa": {
+                        "type": "neural",
+                        "category": "research paper",
+                        "livecrawl": "fallback",
+                        "include_text": ["Verisight"],
+                        "exclude_text": ["spam"],
+                        "highlights": False,
+                        "summary": True,
+                        "subpages": 2,
+                    }
+                }
+            ),
+        )
+
+        with patch("httpx.AsyncClient", FakeAsyncClient):
+            await provider.search(search_request)
+
+        payload = FakeAsyncClient.last_post["json"]  # type: ignore[index]
+        self.assertEqual(payload["type"], "neural")
+        self.assertEqual(payload["category"], "research paper")
+        self.assertEqual(payload["livecrawl"], "fallback")
+        self.assertEqual(payload["includeText"], ["Verisight"])
+        self.assertEqual(payload["excludeText"], ["spam"])
+        self.assertFalse(payload["contents"]["highlights"])
+        self.assertTrue(payload["contents"]["summary"])
+        self.assertEqual(payload["subpages"], 2)
 
 
 class RedactionTests(unittest.TestCase):

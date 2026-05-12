@@ -46,6 +46,17 @@ class TavilyProvider:
             "include_answer": bool(request.include_answer),
             "include_raw_content": bool(request.include_raw_content),
         }
+        tavily_options = request.provider_options_for(self.name)
+        for key in (
+            "search_depth",
+            "topic",
+            "chunks_per_source",
+            "include_images",
+            "include_image_descriptions",
+            "auto_parameters",
+        ):
+            if key in tavily_options:
+                payload[key] = tavily_options[key]
         if request.allowed_domains:
             payload["include_domains"] = request.allowed_domains
         if request.excluded_domains:
@@ -58,7 +69,7 @@ class TavilyProvider:
             payload["time_range"] = request.time_range
         if request.country:
             payload["country"] = request.country
-        if request.mode.value == "news":
+        if request.mode.value == "news" and "topic" not in tavily_options:
             payload["topic"] = "news"
         async with httpx.AsyncClient(timeout=self.config.timeout_seconds) as client:
             response = await client.post("https://api.tavily.com/search", json=payload)

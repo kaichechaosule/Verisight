@@ -1,7 +1,8 @@
 import unittest
 
 from verisight.router import route_query
-from verisight.schema import SearchMode
+from verisight.provider_options import ProviderOptionsMap
+from verisight.schema import ProviderCapabilities, SearchConstraints, SearchMode
 
 
 class RouterTests(unittest.TestCase):
@@ -28,6 +29,41 @@ class RouterTests(unittest.TestCase):
         route = route_query("latest Grok news", {"jina"})
 
         self.assertEqual(route.selected_providers, [])
+
+    def test_provider_options_prioritize_target_provider(self) -> None:
+        route = route_query(
+            "general search",
+            {"exa", "brave", "tavily"},
+            provider_options=ProviderOptionsMap.model_validate({"tavily": {"search_depth": "advanced"}}),
+        )
+
+        self.assertEqual(route.selected_providers[0], "tavily")
+        self.assertIn("provider-specific options", route.routing_reason[0])
+
+    def test_unavailable_provider_options_are_reported(self) -> None:
+        route = route_query(
+            "general search",
+            {"duckduckgo"},
+            provider_options=ProviderOptionsMap.model_validate({"tavily": {"search_depth": "advanced"}}),
+        )
+
+        self.assertEqual(route.selected_providers, ["duckduckgo"])
+        self.assertTrue(any("tavily" in reason and "not available" in reason for reason in route.routing_reason))
+
+    def test_native_capabilities_influence_provider_order(self) -> None:
+        route = route_query(
+            "general search",
+            {"exa", "brave", "tavily"},
+            constraints=SearchConstraints(country="US", language="en", safe_search="strict"),
+            capabilities_by_provider={
+                "exa": ProviderCapabilities(),
+                "brave": ProviderCapabilities(native_country=True, native_language=True, native_safe_search=True),
+                "tavily": ProviderCapabilities(native_country=True),
+            },
+        )
+
+        self.assertEqual(route.selected_providers[0], "brave")
+        self.assertTrue(any("matched 3 native" in reason for reason in route.routing_reason))
 
 
 if __name__ == "__main__":

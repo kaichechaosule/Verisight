@@ -34,16 +34,26 @@ class ExaProvider:
         if not self.config.api_key:
             raise ProviderError("EXA_API_KEY is not set")
 
+        exa_options = request.provider_options_for(self.name)
         payload = {
             "query": request.query,
             "numResults": request.max_results,
-            "type": "auto",
+            "type": exa_options.get("type", "auto"),
             "contents": {
-                "highlights": True,
-                "summary": bool(request.include_answer),
+                "highlights": exa_options.get("highlights", True),
+                "summary": exa_options.get("summary", bool(request.include_answer)),
                 "text": bool(request.include_raw_content),
             },
         }
+        for option_key, payload_key in (
+            ("category", "category"),
+            ("livecrawl", "livecrawl"),
+            ("include_text", "includeText"),
+            ("exclude_text", "excludeText"),
+            ("subpages", "subpages"),
+        ):
+            if option_key in exa_options:
+                payload[payload_key] = exa_options[option_key]
         if request.allowed_domains:
             payload["includeDomains"] = request.allowed_domains
         if request.excluded_domains:
