@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 import httpx
 
 from verisight.providers.base import ProviderConfig, ProviderError, raise_for_provider
-from verisight.schema import SearchItem
+from verisight.schema import ProviderCapabilities, SearchItem, SearchRequest
 
 
 class ExaProvider:
@@ -23,16 +23,35 @@ class ExaProvider:
     def supports_extract(self) -> bool:
         return False
 
-    async def search(self, query: str, max_results: int) -> list[SearchItem]:
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            native_domains=True,
+            native_date_range=True,
+            native_raw_content=True,
+        )
+
+    async def search(self, request: SearchRequest) -> list[SearchItem]:
         if not self.config.api_key:
             raise ProviderError("EXA_API_KEY is not set")
 
         payload = {
-            "query": query,
-            "numResults": max_results,
+            "query": request.query,
+            "numResults": request.max_results,
             "type": "auto",
-            "contents": {"highlights": True, "summary": False},
+            "contents": {
+                "highlights": True,
+                "summary": bool(request.include_answer),
+                "text": bool(request.include_raw_content),
+            },
         }
+        if request.allowed_domains:
+            payload["includeDomains"] = request.allowed_domains
+        if request.excluded_domains:
+            payload["excludeDomains"] = request.excluded_domains
+        if request.from_date:
+            payload["startPublishedDate"] = request.from_date
+        if request.to_date:
+            payload["endPublishedDate"] = request.to_date
         async with httpx.AsyncClient(timeout=self.config.timeout_seconds) as client:
             response = await client.post(
                 "https://api.exa.ai/search",
@@ -42,7 +61,7 @@ class ExaProvider:
         raise_for_provider(response, self.name)
         results = response.json().get("results", [])
         items: list[SearchItem] = []
-        for index, item in enumerate(results[:max_results], start=1):
+        for index, item in enumerate(results[:request.max_results], start=1):
             url = str(item.get("url") or "")
             if not url:
                 continue

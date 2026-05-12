@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 import httpx
 
 from verisight.providers.base import ProviderConfig, ProviderError, raise_for_provider
-from verisight.schema import ExtractResponse, SearchItem
+from verisight.schema import ExtractResponse, ProviderCapabilities, SearchItem, SearchRequest
 
 
 class JinaProvider:
@@ -23,7 +23,10 @@ class JinaProvider:
     def supports_extract(self) -> bool:
         return True
 
-    async def search(self, query: str, max_results: int) -> list[SearchItem]:
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(native_raw_content=True)
+
+    async def search(self, request: SearchRequest) -> list[SearchItem]:
         raise ProviderError("Jina is configured as an extraction provider, not a search provider")
 
     async def extract(self, url: str) -> ExtractResponse:

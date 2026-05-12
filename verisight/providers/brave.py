@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 import httpx
 
 from verisight.providers.base import ProviderConfig, ProviderError, raise_for_provider
-from verisight.schema import SearchItem
+from verisight.schema import ProviderCapabilities, SearchItem, SearchRequest
 
 
 class BraveProvider:
@@ -23,20 +23,43 @@ class BraveProvider:
     def supports_extract(self) -> bool:
         return False
 
-    async def search(self, query: str, max_results: int) -> list[SearchItem]:
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            native_date_range=True,
+            native_time_range=True,
+            native_country=True,
+            native_language=True,
+            native_safe_search=True,
+            native_news=True,
+        )
+
+    async def search(self, request: SearchRequest) -> list[SearchItem]:
         if not self.config.api_key:
             raise ProviderError("BRAVE_API_KEY is not set")
+
+        params: dict[str, str | int | bool] = {"q": request.query, "count": min(request.max_results, 20)}
+        if request.country:
+            params["country"] = request.country
+        if request.language:
+            params["search_lang"] = request.language
+        if request.safe_search:
+            params["safesearch"] = request.safe_search
+        freshness = _brave_freshness(request)
+        if freshness:
+            params["freshness"] = freshness
+        if request.mode.value == "news":
+            params["result_filter"] = "news"
 
         async with httpx.AsyncClient(timeout=self.config.timeout_seconds) as client:
             response = await client.get(
                 "https://api.search.brave.com/res/v1/web/search",
-                params={"q": query, "count": max_results},
+                params=params,
                 headers={"Accept": "application/json", "X-Subscription-Token": self.config.api_key},
             )
         raise_for_provider(response, self.name)
         web_results = response.json().get("web", {}).get("results", [])
         items: list[SearchItem] = []
-        for index, item in enumerate(web_results[:max_results], start=1):
+        for index, item in enumerate(web_results[:request.max_results], start=1):
             url = str(item.get("url") or "")
             if not url:
                 continue
@@ -54,3 +77,17 @@ class BraveProvider:
                 )
             )
         return items
+
+
+def _brave_freshness(request: SearchRequest) -> str | None:
+    if request.from_date and request.to_date:
+        return f"{request.from_date}to{request.to_date}"
+    if request.time_range == "day":
+        return "pd"
+    if request.time_range == "week":
+        return "pw"
+    if request.time_range == "month":
+        return "pm"
+    if request.time_range == "year":
+        return "py"
+    return None
